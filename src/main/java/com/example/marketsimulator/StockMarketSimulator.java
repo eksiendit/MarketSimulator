@@ -16,9 +16,8 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
 
-import java.util.Random;
-import java.util.Timer;
-import java.util.TimerTask;
+import java.util.*;
+import java.util.stream.Collectors;
 
 public class StockMarketSimulator extends Application {
 
@@ -27,8 +26,11 @@ public class StockMarketSimulator extends Application {
     private TableView<Stock> stockTable;
     private TextArea transactionHistory;
     private LineChart<Number, Number> lineChart;
-    private XYChart.Series<Number, Number> priceSeries;  // Сериес для графика
+    private XYChart.Series<Number, Number> priceSeries;// Сериес для графика
     private int timeStep = 0;  // Время для оси X на графике
+
+    private HashMap <String,XYChart.Series> history = new HashMap<>();
+
 
     public void stop(Stage primaryStage) {
         primaryStage.setOnCloseRequest(t -> {
@@ -82,7 +84,7 @@ public class StockMarketSimulator extends Application {
         primaryStage.show();
 
         // Инициализация акций
-        initializeStocks();
+        initialize();
 
         // Псевдослучайное изменение цен
         Timer timer = new Timer();
@@ -92,41 +94,62 @@ public class StockMarketSimulator extends Application {
                 Platform.runLater(() -> {
                     try {
                         updateStockPrices();
+
                     } catch (InterruptedException e) {
                         throw new RuntimeException(e);
                     }
                 });
             }
         }, 0, 2000);  // обновление каждые 2 секунды
-
+stockTable.getSelectionModel().selectedItemProperty().addListener((obs,oldv,newv)->{
+    System.out.println(newv.getName());
+    if (newv != null) {
+        lineChart.getData().clear();
+        lineChart.getData().add(history.get(newv.getName()));
+    }
+});
         // Логика покупки и продажи
         buyButton.setOnAction(e -> processTransaction("buy", amountField));
         sellButton.setOnAction(e -> processTransaction("sell", amountField));
     }
 
-    private void initializeStocks() {
+    private void initialize() {
         stockTable.getItems().addAll(
                 new Stock("AAPL", getRandomPrice()),
                 new Stock("GOOGL", getRandomPrice()),
                 new Stock("AMZN", getRandomPrice())
         );
+        for (Stock stock: stockTable.getItems()) {
+            history.put(stock.getName(), new XYChart.Series());
+        }
     }
 
     private void updateStockPrices() throws InterruptedException {
         Random random = new Random();
 
         for (Stock stock : stockTable.getItems()) {
-            double change = (random.nextDouble() - 1.5) * 2;  // изменение цены на [-3, 3]%
+            double change = (random.nextDouble(3) - 1.5) * 2;  // изменение цены на [-3, 3]%
             stock.setPrice(stock.getPrice() * (1 + change / 100));
         }
 
         // Обновляем график
-        timeStep++;
 
-        Stock selectedStock = stockTable.getItems().get(0);  // Используем первую акцию для примера (AAPL)
+
+        Stock selectedStock = stockTable.getItems().get(0);
         double currentPrice = selectedStock.getPrice();
-        priceSeries.getData().add(new XYChart.Data<>(timeStep, currentPrice));
+        for (Map.Entry<String, XYChart.Series> entry : history.entrySet()) {
+           List <Stock> currentStockList = stockTable.getItems().stream()
+                   .filter(element -> element.getName().equals(entry.getKey()))
+                           .limit(1)
+                                   .collect(Collectors.toList());
+           Stock currentStock = currentStockList.get(0);
+
+            entry.getValue().getData().add(new XYChart.Data<>(timeStep, currentStock.getPrice()));
+        }
+
+        timeStep++;
     }
+
 
     private double getRandomPrice() {
         Random random = new Random();
