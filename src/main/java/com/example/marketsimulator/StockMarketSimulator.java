@@ -40,21 +40,15 @@ public class StockMarketSimulator extends Application {
     private String currentlyDisplayedStock = null;
     private XYChart.Series<Number, Number> displayedSeries = null;
 
-    public void stop(Stage primaryStage) {
-        primaryStage.setOnCloseRequest(t -> {
-            Platform.exit();
-            System.exit(0);
-        });
-    }
+    // Создадим экземпляр WebSocket-клиента
+    private BinanceWebSocketClient binanceClient = new BinanceWebSocketClient();
 
     @Override
     public void start(Stage primaryStage) {
-        primaryStage.setTitle("Stock Market Simulator");
-        stop(primaryStage);
-        // Баланс пользователя
+        primaryStage.setTitle("Stock (Crypto) Market Simulator");
+
         balanceLabel = new Label("Balance: $" + balance);
 
-        // Таблица для акций
         stockTable = new TableView<>();
         stockTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
 
@@ -66,49 +60,38 @@ public class StockMarketSimulator extends Application {
 
         stockTable.getColumns().addAll(nameColumn, priceColumn);
 
-        // Кнопки для покупки и продажи
         Button buyButton = new Button("Buy");
         Button sellButton = new Button("Sell");
 
-        // Поле ввода для количества акций
         TextField amountField = new TextField();
         amountField.setPromptText("Amount");
 
-        // История сделок
         transactionHistory = new TextArea();
         transactionHistory.setEditable(false);
         transactionHistory.setPrefHeight(150);
 
         HBox actionBox = new HBox(10, new Label("Amount:"), amountField, buyButton, sellButton);
 
-        // Создаем график
         lineChart = createChart();
 
-        // Лэйаут для отображения графиков и истории сделок
         VBox layout = new VBox(10, balanceLabel, stockTable, actionBox, lineChart, transactionHistory);
         Scene scene = new Scene(layout, 800, 600);
         primaryStage.setScene(scene);
         primaryStage.show();
 
-        // Инициализация акций
+        // Инициализация с "фиктивными" акциями (на деле будут криптопары)
         initialize();
 
-        // Псевдослучайное изменение цен
-        Timer timer = new Timer();
-        timer.scheduleAtFixedRate(new TimerTask() {
-            @Override
-            public void run() {
-                Platform.runLater(() -> {
-                    try {
-                        updateStockPrices();
-                    } catch (InterruptedException e) {
-                        throw new RuntimeException(e);
-                    }
-                });
-            }
-        }, 0, 2000); // обновление каждые 2 секунды
+        // --- ВАЖНО! ---
+        // Теперь НЕ запускаем Timer с рандомом, а подключаемся к Binance WebSocket
+        // Для теста подпишемся только на BTCUSDT
+        // @ticker - 24-часовые данные: в JSON получаем поле "c" (текущая цена)
+        binanceClient.connect("btcusdt@ticker", newPrice -> {
+            // Здесь код обновления цены в UI
+            updatePriceInTable("BTCUSDT", newPrice);
+        });
 
-        // При выборе акции - перестраиваем график для неё
+        // При выборе "акции" отображаем её историю на графике
         stockTable.getSelectionModel().selectedItemProperty().addListener((obs, oldv, newv) -> {
             if (newv != null) {
                 currentlyDisplayedStock = newv.getName();
@@ -119,45 +102,46 @@ public class StockMarketSimulator extends Application {
         // Логика покупки/продажи
         buyButton.setOnAction(e -> processTransaction("buy", amountField));
         sellButton.setOnAction(e -> processTransaction("sell", amountField));
+
+        // При закрытии приложения закрываем WebSocket
+        primaryStage.setOnCloseRequest(event -> {
+            binanceClient.close();
+            Platform.exit();
+            System.exit(0);
+        });
     }
 
     private void initialize() {
-        stockTable.getItems().addAll(
-                new Stock("AAPL", getRandomPrice()),
-                new Stock("GOOGL", getRandomPrice()),
-                new Stock("AMZN", getRandomPrice())
-        );
-        // Инициализируем пустые списки для исторических данных
-        for (Stock stock : stockTable.getItems()) {
-            historyData.put(stock.getName(), new ArrayList<>());
-        }
+        // Допустим, мы хотим BTCUSDT отобразить в таблице
+        stockTable.getItems().add(new Stock("BTCUSDT", 0.0));
+
+        // Инициализируем историю для "BTCUSDT"
+        historyData.put("BTCUSDT", new ArrayList<>());
     }
 
-    private void updateStockPrices() throws InterruptedException {
-        Random random = new Random();
-
+    /**
+     * Этот метод вызывается при получении новой цены для соответствующей "акции"
+     */
+    private void updatePriceInTable(String stockName, double newPrice) {
+        // Ищем нужный элемент в таблице
         for (Stock stock : stockTable.getItems()) {
-            double change = (random.nextDouble(3) - 1.5) * 2;  // случайное изменение цены
-            double newPrice = stock.getPrice() * (1 + change / 100);
-            stock.setPrice(newPrice);
+            if (stock.getName().equals(stockName)) {
+                stock.setPrice(newPrice);
 
-            // Записываем данные
-            List<PricePoint> dataList = historyData.get(stock.getName());
-            dataList.add(new PricePoint(timeStep, newPrice));
+                // Записываем в историю
+                List<PricePoint> dataList = historyData.get(stockName);
+                dataList.add(new PricePoint(timeStep, newPrice));
 
-            // Если сейчас отображается именно эта акция, добавляем новую точку прямо в график
-            if (currentlyDisplayedStock != null && currentlyDisplayedStock.equals(stock.getName()) && displayedSeries != null) {
-                // Добавляем только новую точку, не пересоздавая всю серию
-                displayedSeries.getData().add(new XYChart.Data<>(timeStep, newPrice));
+                // Если на графике сейчас выбрана эта акция, добавляем точку
+                if (currentlyDisplayedStock != null
+                        && currentlyDisplayedStock.equals(stockName)
+                        && displayedSeries != null) {
+                    displayedSeries.getData().add(new XYChart.Data<>(timeStep, newPrice));
+                }
+                timeStep++;
+                break;
             }
         }
-
-        timeStep++;
-    }
-
-    private double getRandomPrice() {
-        Random random = new Random();
-        return 50 + (random.nextDouble() * 100);  // цены в диапазоне 50-150$
     }
 
     private void processTransaction(String type, TextField amountField) {
@@ -174,16 +158,18 @@ public class StockMarketSimulator extends Application {
             if ("buy".equals(type)) {
                 if (balance >= totalPrice) {
                     balance -= totalPrice;
-                    transactionHistory.appendText("Bought " + amount + " of " + selectedStock.getName()
-                            + " at $" + selectedStock.getPrice() + " each. Total: $" + totalPrice + "\n");
+                    transactionHistory.appendText(
+                            "Bought " + amount + " of " + selectedStock.getName()
+                                    + " at $" + selectedStock.getPrice() + " each. Total: $" + totalPrice + "\n");
                 } else {
                     transactionHistory.appendText("Insufficient balance to buy.\n");
                 }
             } else if ("sell".equals(type)) {
-                // Простая логика продажи
+                // Очень упрощённая логика
                 balance += totalPrice;
-                transactionHistory.appendText("Sold " + amount + " of " + selectedStock.getName()
-                        + " at $" + selectedStock.getPrice() + " each. Total: $" + totalPrice + "\n");
+                transactionHistory.appendText(
+                        "Sold " + amount + " of " + selectedStock.getName()
+                                + " at $" + selectedStock.getPrice() + " each. Total: $" + totalPrice + "\n");
             }
 
             balanceLabel.setText("Balance: $" + balance);
@@ -194,7 +180,6 @@ public class StockMarketSimulator extends Application {
         }
     }
 
-    // Создание графика
     private LineChart<Number, Number> createChart() {
         NumberAxis xAxis = new NumberAxis();
         NumberAxis yAxis = new NumberAxis();
@@ -206,7 +191,6 @@ public class StockMarketSimulator extends Application {
         return chart;
     }
 
-    // Перестроение серии для выбранной акции (вызывается при выборе новой акции)
     private void rebuildSeriesForSelectedStock(String stockName) {
         lineChart.getData().clear();
         displayedSeries = new XYChart.Series<>();
