@@ -20,9 +20,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Random;
-import java.util.Timer;
-import java.util.TimerTask;
 
 public class StockMarketSimulator extends Application {
 
@@ -42,6 +39,8 @@ public class StockMarketSimulator extends Application {
 
     // Создадим экземпляр WebSocket-клиента
     private BinanceWebSocketClient binanceClient = new BinanceWebSocketClient();
+    private BinanceWebSocketClient binanceClient1 = new BinanceWebSocketClient();
+    private BinanceWebSocketClient binanceClient2 = new BinanceWebSocketClient();
 
     @Override
     public void start(Stage primaryStage) {
@@ -88,7 +87,15 @@ public class StockMarketSimulator extends Application {
         // @ticker - 24-часовые данные: в JSON получаем поле "c" (текущая цена)
         binanceClient.connect("btcusdt@ticker", newPrice -> {
             // Здесь код обновления цены в UI
-            updatePriceInTable("BTCUSDT", newPrice);
+            updatePriceInTable("BTC\\USDT", newPrice);
+        });
+        binanceClient1.connect("ethusdt@ticker", newPrice -> {
+            // Здесь код обновления цены в UI
+            updatePriceInTable("ETH\\USDT", newPrice);
+        });
+        binanceClient2.connect("dogeusdt@ticker", newPrice -> {
+            // Здесь код обновления цены в UI
+            updatePriceInTable("DOGE\\USDT", newPrice);
         });
 
         // При выборе "акции" отображаем её историю на графике
@@ -113,10 +120,14 @@ public class StockMarketSimulator extends Application {
 
     private void initialize() {
         // Допустим, мы хотим BTCUSDT отобразить в таблице
-        stockTable.getItems().add(new Stock("BTCUSDT", 0.0));
+        stockTable.getItems().add(new Stock("BTC\\USDT", 0.0));
+        stockTable.getItems().add(new Stock("ETH\\USDT", 0.0));
+        stockTable.getItems().add(new Stock("DOGE\\USDT", 0.0));
 
         // Инициализируем историю для "BTCUSDT"
-        historyData.put("BTCUSDT", new ArrayList<>());
+        historyData.put("BTC\\USDT", new ArrayList<>());
+        historyData.put("ETH\\USDT", new ArrayList<>());
+        historyData.put("DOGE\\USDT", new ArrayList<>());
     }
 
     /**
